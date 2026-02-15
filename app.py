@@ -3,115 +3,70 @@ import requests
 import pandas as pd
 import time
 
-st.set_page_config(page_title="CS2 Market Scanner", layout="wide")
-st.title("📊 Сканер цен: Steam Market vs CSFloat")
-
-# Список предметов для отслеживания (добавляй сюда любые названия с ТП)
-items_to_track = [
-    "AK-47 | Slate (Field-Tested)",
-    "Glove Case",
-    "P250 | Sand Dune (Field-Tested)",
-    "Fracture Case"
-]
-
-def get_prices(item_name):
-    # Прямой запрос к Steam
-    steam_url = f"https://steamcommunity.com/market/priceoverview/?appid=730&currency=1&market_hash_name={item_name}"
-    # Прямой запрос к CSFloat
-    float_url = f"https://csfloat.com/api/v1/listings/items/basic?market_hash_name={item_name}"
-    
-    data = {"Предмет": item_name, "Steam ($)": 0, "CSFloat ($)": 0, "Профит ($)": 0}
-    
-    try:
-        s_res = requests.get(steam_url).json()
-        if s_res.get("success"):
-            price = s_res["lowest_price"].replace("$", "").replace(",", ".")
-            data["Steam ($)"] = float(price)
-            
-        f_res = requests.get(float_url).json()
-        if len(f_res) > 0:
-            data["CSFloat ($)"] = f_res[0]["price"] / 100
-            
-        # Расчет прибыли (Комиссия Float 2%)
-        data["Профит ($)"] = round((data["CSFloat ($)"] * 0.98) - data["Steam ($)"], 2)
-    except:
-        pass
-    
-    return data
-
-if st.button('Обновить цены'):
-    results = []
-    progress_bar = st.progress(0)
-    
-    for i, item in enumerate(items_to_track):
-        results.append(get_prices(item))
-        progress_bar.progress((i + 1) / len(items_to_track))
-        time.sleep(2) # Пауза для Steam
-        
-    df = pd.DataFrame(results)
-    st.table(df)
-else:
-    st.info("Нажмите кнопку для сканирования рынка")
-import streamlit as st
-import requests
-import pandas as pd
-import time
-
-# Настройка страницы
 st.set_page_config(page_title="CS2 Pro Scanner", layout="wide")
-st.title("🚀 Автоматический сканер Steam vs CSFloat")
 
-# Функция для получения цен
+# Кастомный CSS для красоты
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; }
+    div[data-testid="stDataFrame"] { background-color: #161b22; border-radius: 10px; }
+    </style>
+    """, unsafe_allow_path=True)
+
+st.title("📊 Мой личный сканер ТП vs CSFloat")
+
 def get_prices(item_name):
-    steam_url = f"https://steamcommunity.com/market/priceoverview/?appid=730&currency=1&market_hash_name={item_name}"
-    float_url = f"https://csfloat.com/api/v1/listings/items/basic?market_hash_name={item_name}"
+    # Заголовки, чтобы сайты нас не банили
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     
-    res = {"Предмет": item_name, "Steam": 0, "Float": 0, "Profit": 0, "ROI %": 0}
+    res = {"Предмет": item_name, "Steam": 0.0, "Float": 0.0, "Profit": 0.0, "ROI %": 0.0}
     
     try:
-        # Запрос к Steam
-        s_data = requests.get(steam_url).json()
-        if s_data.get("success"):
-            p = s_data["lowest_price"].replace("$", "").replace(",", ".")
-            res["Steam"] = float(p)
+        # Steam
+        s_url = f"https://steamcommunity.com/market/priceoverview/?appid=730&currency=1&market_hash_name={item_name}"
+        s_req = requests.get(s_url, headers=headers, timeout=10).json()
+        if s_req.get("success"):
+            # Очищаем цену от знаков валют и лишних точек
+            p_str = s_req["lowest_price"].replace("$", "").replace("USD", "").replace(",", ".").strip()
+            res["Steam"] = round(float(p_str), 2)
             
-        # Запрос к CSFloat
-        f_data = requests.get(float_url).json()
-        if f_data:
-            res["Float"] = f_data[0]["price"] / 100
+        # CSFloat
+        f_url = f"https://csfloat.com/api/v1/listings/items/basic?market_hash_name={item_name}"
+        f_req = requests.get(f_url, headers=headers, timeout=10).json()
+        if f_req and len(f_req) > 0:
+            res["Float"] = round(f_req[0]["price"] / 100, 2)
             
-        # Расчет (2% комиссия Float)
-        res["Profit"] = round((res["Float"] * 0.98) - res["Steam"], 2)
-        if res["Steam"] > 0:
-            res["ROI %"] = round((res["Profit"] / res["Steam"]) * 100, 1)
-    except:
+        # Математика
+        if res["Steam"] > 0 and res["Float"] > 0:
+            # Чистыми после комиссии Float (2%)
+            net_sale = res["Float"] * 0.98
+            res["Profit"] = round(net_sale - res["Steam"], 2)
+            res["ROI %"] = round((res["Profit"] / res["Steam"]) * 100, 2)
+            
+    except Exception as e:
         pass
     return res
 
-# Интерфейс
-st.sidebar.header("Настройки списка")
-# Поле, куда ты можешь просто вставить 100 названий через запятую или с новой строки
-input_items = st.sidebar.text_area("Вставь список предметов (каждый с новой строки):", 
-                                   "AK-47 | Slate (Field-Tested)\nFracture Case\nGlove Case")
-
+# Боковая панель
+input_items = st.sidebar.text_area("Список предметов:", "AK-47 | Slate (Field-Tested)\nFracture Case\nGlove Case")
 items_list = [i.strip() for i in input_items.split('\n') if i.strip()]
 
-if st.button('Начать сканирование'):
-    st.write(f"Сканируем {len(items_list)} предметов...")
+if st.button('🚀 Запустить поиск выгоды'):
     results = []
-    prog = st.progress(0)
+    bar = st.progress(0)
     
     for i, name in enumerate(items_list):
-        results.append(get_prices(name))
-        prog.progress((i + 1) / len(items_list))
-        # Важно: Steam банит за частые запросы. Делаем паузу 3-5 сек.
-        time.sleep(4) 
-    
+        data = get_prices(name)
+        results.append(data)
+        bar.progress((i + 1) / len(items_list))
+        time.sleep(3.5) # Пауза, чтобы не получить бан
+        
     df = pd.DataFrame(results)
     
-    # Подсветка выгодных сделок
-    def highlight_profit(val):
-        color = 'lightgreen' if val > 5 else 'white'
-        return f'background-color: {color}'
-
-    st.dataframe(df.style.applymap(highlight_profit, subset=['ROI %']))
+    # Сортируем по профиту сразу
+    df = df.sort_values(by="ROI %", ascending=False)
+    
+    # Вывод красивой таблицы
+    st.dataframe(df, use_container_width=True, height=600)
